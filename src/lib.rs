@@ -35,11 +35,12 @@ use rand04_compat::RngExt;
 use rand_chacha::ChaChaRng;
 use serde::{Deserialize, Serialize};
 use tiny_keccak::sha3_256;
+use zeroize::Zeroize;
 
 use crate::cmp_pairing::cmp_projective;
 use crate::error::{Error, FromBytesError, FromBytesResult, Result};
 use crate::poly::{Commitment, Poly};
-use crate::secret::{clear_fr, ContainsSecret, MemRange, FR_SIZE};
+use crate::secret::clear_fr;
 
 pub use crate::into_fr::IntoFr;
 
@@ -290,6 +291,18 @@ impl SignatureShare {
 #[derive(PartialEq, Eq)]
 pub struct SecretKey(Box<Fr>);
 
+impl Zeroize for SecretKey {
+    fn zeroize(&mut self) {
+        clear_fr(&mut *self.0)
+    }
+}
+
+impl Drop for SecretKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 /// Creates a `SecretKey` containing the zero prime field element.
 impl Default for SecretKey {
     fn default() -> Self {
@@ -316,25 +329,10 @@ impl Clone for SecretKey {
     }
 }
 
-/// Zeroes out the memory allocated from the `SecretKey`'s field element.
-impl Drop for SecretKey {
-    fn drop(&mut self) {
-        self.zero_secret();
-    }
-}
 /// A debug statement where the secret prime field element is redacted.
 impl fmt::Debug for SecretKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("SecretKey").field(&"...").finish()
-    }
-}
-
-impl ContainsSecret for SecretKey {
-    fn secret_memory(&self) -> MemRange {
-        MemRange {
-            ptr: &*self.0 as *const Fr as *mut u8,
-            n_bytes: FR_SIZE,
-        }
     }
 }
 
@@ -352,7 +350,7 @@ impl SecretKey {
         unsafe {
             copy_nonoverlapping(fr_ptr, &mut *boxed_fr as *mut Fr, 1);
         }
-        clear_fr(fr_ptr);
+        clear_fr(fr);
         SecretKey(boxed_fr)
     }
 
@@ -1004,5 +1002,16 @@ mod tests {
     fn test_size() {
         assert_eq!(<G1Affine as CurveAffine>::Compressed::size(), PK_SIZE);
         assert_eq!(<G2Affine as CurveAffine>::Compressed::size(), SIG_SIZE);
+    }
+
+    #[test]
+    fn test_zeroize() {
+        let zero_pk = SecretKey::from_mut(&mut Fr::zero()).public_key();
+
+        let mut sk = SecretKey::random();
+        assert_ne!(zero_pk, sk.public_key());
+
+        sk.zeroize();
+        assert_eq!(zero_pk, sk.public_key());
     }
 }
