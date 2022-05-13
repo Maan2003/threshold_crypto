@@ -20,7 +20,6 @@ edition = "2018"
 
 [dependencies]
 byteorder = "1.2.7"
-errno = "0.2.4"
 failure = "0.1.5"
 hex_fmt = "0.3.0"
 log = "0.4.8"
